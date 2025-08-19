@@ -100,6 +100,12 @@
   </style>
 </head>
 <body>
+  <div style="margin-top: 20px;">
+  <button onclick="taksimetreBaslat()">Taksimetreyi Başlat</button>
+  <button onclick="taksimetreDurdur()">Durdur</button>
+  <div id="sonuc">Taksimetre hazır.</div>
+</div>
+
   <h2>Taksi Ücreti Hesaplama</h2>
   <div id="form-container">
     <label for="il">İl Seçin:</label>
@@ -127,6 +133,70 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
 
   <script>
+    let watchId;
+let taksimetreAktif = false;
+let toplamMesafe = 0;
+let oncekiKonum = null;
+let ucret = 0;
+
+function taksimetreBaslat() {
+  if (taksimetreAktif) return;
+  taksimetreAktif = true;
+  toplamMesafe = 0;
+  ucret = 0;
+  oncekiKonum = null;
+
+  const il = document.getElementById("il").value;
+  const tarife = tarifeler[il];
+  ucret = tarife.acilis;
+
+  if ("geolocation" in navigator) {
+    watchId = navigator.geolocation.watchPosition(
+      (konum) => {
+        const { latitude, longitude } = konum.coords;
+        const yeniKonum = [latitude, longitude];
+
+        if (oncekiKonum) {
+          const mesafe = hesaplaMesafe(oncekiKonum, yeniKonum); // km
+          toplamMesafe += mesafe;
+          ucret = tarife.acilis + (toplamMesafe * tarife.km);
+        }
+
+        oncekiKonum = yeniKonum;
+
+        document.getElementById("sonuc").innerText =
+          `Gerçek Mesafe: ${toplamMesafe.toFixed(2)} km | Ücret: ${ucret.toFixed(2)} TL`;
+      },
+      (hata) => {
+        document.getElementById("sonuc").innerText = "Konum alınamadı: " + hata.message;
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+    );
+  } else {
+    document.getElementById("sonuc").innerText = "Tarayıcınız konum takibini desteklemiyor.";
+  }
+}
+
+function taksimetreDurdur() {
+  taksimetreAktif = false;
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  document.getElementById("sonuc").innerText =
+    `Toplam Mesafe: ${toplamMesafe.toFixed(2)} km | Toplam Ücret: ${ucret.toFixed(2)} TL`;
+}
+
+function hesaplaMesafe(konum1, konum2) {
+  const R = 6371; // Dünya yarıçapı (km)
+  const dLat = (konum2[0] - konum1[0]) * Math.PI / 180;
+  const dLon = (konum2[1] - konum1[1]) * Math.PI / 180;
+  const lat1 = konum1[0] * Math.PI / 180;
+  const lat2 = konum2[0] * Math.PI / 180;
+
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
     const tarifeler = {
       izmir: { acilis: 25, km: 36 },
       istanbul: { acilis: 42, km: 28 },
@@ -218,3 +288,4 @@
   </script>
 </body>
 </html>
+
