@@ -97,6 +97,21 @@
         padding: 10px;
       }
     }
+    #taksimetre-ekrani {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255,255,255,0.9);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  font-size: 1rem;
+  z-index: 1000;
+}
+#taksimetre-ekrani div {
+  margin-bottom: 6px;
+}
+
   </style>
 </head>
 <body>
@@ -127,7 +142,13 @@
   </div>
 
   <div id="sonuc">Adres girerek veya haritaya tıklayarak rota oluşturabilirsiniz.</div>
-  <div id="map"></div>
+  <div id="map">
+    <div id="taksimetre-ekrani">
+  <div><strong>Mesafe:</strong> <span id="mesafeGoster">0.00 km</span></div>
+  <div><strong>Ücret:</strong> <span id="ucretGoster">0.00 TL</span></div>
+</div>
+
+  </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
@@ -139,7 +160,8 @@ let toplamMesafe = 0;
 let oncekiKonum = null;
 let ucret = 0;
 
-function taksimetreBaslat() {
+function taksimetreBaslat() {let konumMarker;
+
   if (taksimetreAktif) return;
   taksimetreAktif = true;
   toplamMesafe = 0;
@@ -175,6 +197,18 @@ function taksimetreBaslat() {
   } else {
     document.getElementById("sonuc").innerText = "Tarayıcınız konum takibini desteklemiyor.";
   }
+}
+if (!konumMarker) {
+  konumMarker = L.marker(yeniKonum).addTo(map);
+} else {
+  konumMarker.setLatLng(yeniKonum);
+}
+map.setView(yeniKonum, 15); // Haritayı takip ettir
+document.getElementById("mesafeGoster").innerText = `${toplamMesafe.toFixed(2)} km`;
+document.getElementById("ucretGoster").innerText = `${ucret.toFixed(2)} TL`;
+if (!konumMarker && yeniKonum) {
+  konumMarker = L.marker(yeniKonum).addTo(map);
+  map.setView(yeniKonum, 15);
 }
 
 function taksimetreDurdur() {
@@ -288,4 +322,5 @@ function hesaplaMesafe(konum1, konum2) {
   </script>
 </body>
 </html>
+
 
