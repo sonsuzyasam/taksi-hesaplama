@@ -2,325 +2,141 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>Taksi Ücreti Hesaplama</title>
+  <title>Gerçek Zamanlı Taksimetre</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    h2 {
-      text-align: center;
-      margin-top: 20px;
-      font-size: 1.5rem;
-    }
-
-    #form-container {
-      max-width: 500px;
-      margin: 20px auto;
-      padding: 10px;
-    }
-
-    label, input, select, button {
-      display: block;
-      width: 100%;
-      margin-bottom: 12px;
-      padding: 12px;
-      font-size: 1rem;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      box-sizing: border-box;
-    }
-
-    button {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #0056b3;
-    }
-
-    #sonuc {
-      text-align: center;
-      font-size: 1.1rem;
-      margin: 15px;
-    }
-
-    #map {
-      height: 350px;
-      width: 100%;
-      margin-top: 10px;
-    }
-
-    .adres-listesi {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      border: 1px solid #ccc;
-      max-height: 150px;
-      overflow-y: auto;
-      background: white;
+    #map { height: 400px; margin-top: 10px; }
+    #taksimetre-ekrani {
       position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      font-size: 1rem;
       z-index: 1000;
     }
-
-    .adres-listesi li {
-      padding: 12px;
-      font-size: 1rem;
-      border-bottom: 1px solid #ddd;
-      cursor: pointer;
-    }
-
-    .adres-listesi li:hover {
-      background-color: #eee;
-    }
-
-    @media (max-width: 600px) {
-      h2 {
-        font-size: 1.2rem;
-      }
-
-      #map {
-        height: 400px;
-      }
-
-      label, input, select, button {
-        font-size: 1rem;
-        padding: 10px;
-      }
-    }
-    #taksimetre-ekrani {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgba(255,255,255,0.9);
-  padding: 12px;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.2);
-  font-size: 1rem;
-  z-index: 1000;
-}
-#taksimetre-ekrani div {
-  margin-bottom: 6px;
-}
-
+    #taksimetre-ekrani div { margin-bottom: 6px; }
+    #kontroller { margin-top: 10px; }
   </style>
 </head>
 <body>
-  <div style="margin-top: 20px;">
+
+<h2>Gerçek Zamanlı Taksimetre</h2>
+
+<select id="il">
+  <option value="izmir">İzmir</option>
+  <option value="istanbul">İstanbul</option>
+  <option value="ankara">Ankara</option>
+</select>
+
+<div id="kontroller">
   <button onclick="taksimetreBaslat()">Taksimetreyi Başlat</button>
   <button onclick="taksimetreDurdur()">Durdur</button>
-  <div id="sonuc">Taksimetre hazır.</div>
 </div>
 
-  <h2>Taksi Ücreti Hesaplama</h2>
-  <div id="form-container">
-    <label for="il">İl Seçin:</label>
-    <select id="il">
-      <option value="izmir">İzmir</option>
-      <option value="istanbul">İstanbul</option>
-      <option value="ankara">Ankara</option>
-    </select>
-
-    <label for="baslangic">Başlangıç Adresi:</label>
-    <input type="text" id="baslangic" oninput="adresOnerileri(this, 'baslangicListe')" autocomplete="off">
-    <ul id="baslangicListe" class="adres-listesi"></ul>
-
-    <label for="varis">Varış Adresi:</label>
-    <input type="text" id="varis" oninput="adresOnerileri(this, 'varisListe')" autocomplete="off">
-    <ul id="varisListe" class="adres-listesi"></ul>
-
-    <button onclick="rotaCiz()">Rota ve Ücret Hesapla</button>
-  </div>
-
-  <div id="sonuc">Adres girerek veya haritaya tıklayarak rota oluşturabilirsiniz.</div>
-  <div id="map">
-    <div id="taksimetre-ekrani">
+<div id="taksimetre-ekrani">
   <div><strong>Mesafe:</strong> <span id="mesafeGoster">0.00 km</span></div>
   <div><strong>Ücret:</strong> <span id="ucretGoster">0.00 TL</span></div>
+  <div><strong>Durum:</strong> <span id="sonuc">Taksimetre hazır.</span></div>
 </div>
 
-  </div>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  const tarifeler = {
+    izmir: { acilis: 25, km: 36, bekleme: 2 },
+    istanbul: { acilis: 42, km: 28, bekleme: 3 },
+    ankara: { acilis: 45, km: 32, bekleme: 2.5 }
+  };
 
-  <script>
-    let watchId;
-let taksimetreAktif = false;
-let toplamMesafe = 0;
-let oncekiKonum = null;
-let ucret = 0;
+  const map = L.map('map').setView([38.42, 27.14], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-function taksimetreBaslat() {let konumMarker;
+  let watchId, taksimetreAktif = false, toplamMesafe = 0, oncekiKonum = null;
+  let ucret = 0, konumMarker, beklemeBaslangic = null;
 
-  if (taksimetreAktif) return;
-  taksimetreAktif = true;
-  toplamMesafe = 0;
-  ucret = 0;
-  oncekiKonum = null;
+  function taksimetreBaslat() {
+    if (taksimetreAktif) return;
+    taksimetreAktif = true;
+    toplamMesafe = 0;
+    ucret = 0;
+    oncekiKonum = null;
+    beklemeBaslangic = Date.now();
 
-  const il = document.getElementById("il").value;
-  const tarife = tarifeler[il];
-  ucret = tarife.acilis;
+    const il = document.getElementById("il").value;
+    const tarife = tarifeler[il];
+    ucret = tarife.acilis;
 
-  if ("geolocation" in navigator) {
-    watchId = navigator.geolocation.watchPosition(
-      (konum) => {
-        const { latitude, longitude } = konum.coords;
-        const yeniKonum = [latitude, longitude];
+    if ("geolocation" in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (konum) => {
+          const { latitude, longitude } = konum.coords;
+          const yeniKonum = [latitude, longitude];
 
-        if (oncekiKonum) {
-          const mesafe = hesaplaMesafe(oncekiKonum, yeniKonum); // km
-          toplamMesafe += mesafe;
-          ucret = tarife.acilis + (toplamMesafe * tarife.km);
-        }
+          if (!konumMarker) {
+            konumMarker = L.marker(yeniKonum).addTo(map);
+            map.setView(yeniKonum, 15);
+          } else {
+            konumMarker.setLatLng(yeniKonum);
+            map.setView(yeniKonum, 15);
+          }
 
-        oncekiKonum = yeniKonum;
+          if (oncekiKonum) {
+            const mesafe = hesaplaMesafe(oncekiKonum, yeniKonum);
+            if (mesafe < 0.005) {
+              const gecenSure = (Date.now() - beklemeBaslangic) / 60000;
+              ucret += gecenSure * tarife.bekleme;
+            } else {
+              toplamMesafe += mesafe;
+              beklemeBaslangic = Date.now();
+            }
+          }
 
-        document.getElementById("sonuc").innerText =
-          `Gerçek Mesafe: ${toplamMesafe.toFixed(2)} km | Ücret: ${ucret.toFixed(2)} TL`;
-      },
-      (hata) => {
-        document.getElementById("sonuc").innerText = "Konum alınamadı: " + hata.message;
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
-    );
-  } else {
-    document.getElementById("sonuc").innerText = "Tarayıcınız konum takibini desteklemiyor.";
+          oncekiKonum = yeniKonum;
+
+          const saat = new Date().getHours();
+          const geceTarifesi = (saat >= 22 || saat < 6);
+          const kmUcret = toplamMesafe * tarife.km;
+          ucret = tarife.acilis + kmUcret;
+          if (geceTarifesi) ucret *= 1.2;
+
+          document.getElementById("mesafeGoster").innerText = `${toplamMesafe.toFixed(2)} km`;
+          document.getElementById("ucretGoster").innerText = `${ucret.toFixed(2)} TL`;
+          document.getElementById("sonuc").innerText = "Taksimetre çalışıyor...";
+        },
+        (hata) => {
+          document.getElementById("sonuc").innerText = "Konum alınamadı: " + hata.message;
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      );
+    } else {
+      document.getElementById("sonuc").innerText = "Tarayıcınız konum takibini desteklemiyor.";
+    }
   }
-}
-if (!konumMarker) {
-  konumMarker = L.marker(yeniKonum).addTo(map);
-} else {
-  konumMarker.setLatLng(yeniKonum);
-}
-map.setView(yeniKonum, 15); // Haritayı takip ettir
-document.getElementById("mesafeGoster").innerText = `${toplamMesafe.toFixed(2)} km`;
-document.getElementById("ucretGoster").innerText = `${ucret.toFixed(2)} TL`;
-if (!konumMarker && yeniKonum) {
-  konumMarker = L.marker(yeniKonum).addTo(map);
-  map.setView(yeniKonum, 15);
-}
 
-function taksimetreDurdur() {
-  taksimetreAktif = false;
-  if (watchId) navigator.geolocation.clearWatch(watchId);
-  document.getElementById("sonuc").innerText =
-    `Toplam Mesafe: ${toplamMesafe.toFixed(2)} km | Toplam Ücret: ${ucret.toFixed(2)} TL`;
-}
+  function taksimetreDurdur() {
+    taksimetreAktif = false;
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    document.getElementById("sonuc").innerText =
+      `Toplam Mesafe: ${toplamMesafe.toFixed(2)} km | Toplam Ücret: ${ucret.toFixed(2)} TL`;
+  }
 
-function hesaplaMesafe(konum1, konum2) {
-  const R = 6371; // Dünya yarıçapı (km)
-  const dLat = (konum2[0] - konum1[0]) * Math.PI / 180;
-  const dLon = (konum2[1] - konum1[1]) * Math.PI / 180;
-  const lat1 = konum1[0] * Math.PI / 180;
-  const lat2 = konum2[0] * Math.PI / 180;
+  function hesaplaMesafe(konum1, konum2) {
+    const R = 6371;
+    const dLat = (konum2[0] - konum1[0]) * Math.PI / 180;
+    const dLon = (konum2[1] - konum1[1]) * Math.PI / 180;
+    const lat1 = konum1[0] * Math.PI / 180;
+    const lat2 = konum2[0] * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+</script>
 
-  const a = Math.sin(dLat / 2) ** 2 +
-            Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-    const tarifeler = {
-      izmir: { acilis: 25, km: 36 },
-      istanbul: { acilis: 42, km: 28 },
-      ankara: { acilis: 45, km: 32 }
-    };
-
-    const map = L.map('map').setView([38.42, 27.14], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    let control;
-    let noktalar = [];
-
-    map.on('click', function(e) {
-      noktalar.push(e.latlng);
-      L.marker(e.latlng).addTo(map);
-      if (noktalar.length === 2) {
-        if (control) map.removeControl(control);
-        control = L.Routing.control({
-          waypoints: [noktalar[0], noktalar[1]],
-          routeWhileDragging: false,
-          show: false
-        }).addTo(map);
-
-        control.on('routesfound', function(e) {
-          const il = document.getElementById("il").value;
-          const km = e.routes[0].summary.totalDistance / 1000;
-          const tarife = tarifeler[il];
-          const ucret = tarife.acilis + (km * tarife.km);
-          document.getElementById("sonuc").innerText =
-            `Harita Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
-        });
-
-        noktalar = [];
-      }
-    });
-
-    async function adresOnerileri(alani, listeId) {
-      const query = alani.value;
-      if (query.length < 3) return;
-
-      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      const liste = document.getElementById(listeId);
-      liste.innerHTML = "";
-
-      data.features.forEach(item => {
-        const li = document.createElement("li");
-        li.textContent = item.properties.name + ", " + (item.properties.city || "");
-        li.onclick = () => {
-          alani.value = li.textContent;
-          alani.dataset.lat = item.geometry.coordinates[1];
-          alani.dataset.lon = item.geometry.coordinates[0];
-          liste.innerHTML = "";
-          L.marker([item.geometry.coordinates[1], item.geometry.coordinates[0]]).addTo(map);
-        };
-        liste.appendChild(li);
-      });
-    }
-
-    function rotaCiz() {
-      const il = document.getElementById("il").value;
-      const lat1 = parseFloat(document.getElementById("baslangic").dataset.lat);
-      const lon1 = parseFloat(document.getElementById("baslangic").dataset.lon);
-      const lat2 = parseFloat(document.getElementById("varis").dataset.lat);
-      const lon2 = parseFloat(document.getElementById("varis").dataset.lon);
-
-      if (isNaN(lat1) || isNaN(lat2)) {
-        document.getElementById("sonuc").innerText = "Lütfen geçerli adresler seçin.";
-        return;
-      }
-
-      if (control) map.removeControl(control);
-      control = L.Routing.control({
-        waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
-        routeWhileDragging: false,
-        show: false
-      }).addTo(map);
-
-      control.on('routesfound', function(e) {
-        const km = e.routes[0].summary.totalDistance / 1000;
-        const tarife = tarifeler[il];
-        const ucret = tarife.acilis + (km * tarife.km);
-        document.getElementById("sonuc").innerText =
-          `Adres Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
-      });
-    }
-  </script>
 </body>
 </html>
-
-
