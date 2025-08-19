@@ -2,32 +2,70 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>Taksi Ücreti Hesaplama Harita</title>
+  <title>Taksi Ücreti Hesaplama</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
   <style>
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
     h2 { text-align: center; margin-top: 20px; }
-    #map { height: 500px; width: 100%; }
+    #map { height: 400px; width: 100%; }
+    #form-container { max-width: 400px; margin: 20px auto; padding: 10px; }
+    label, input, select, button {
+      display: block;
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 8px;
+      font-size: 16px;
+    }
     #sonuc { text-align: center; font-size: 18px; margin: 15px; }
   </style>
 </head>
 <body>
 
-<h2>Haritadan Taksi Ücreti Hesapla</h2>
-<div id="map"></div>
+<h2>Taksi Ücreti Hesaplama</h2>
+
+<div id="form-container">
+  <label for="il">İl Seçin:</label>
+  <select id="il">
+    <option value="izmir">İzmir</option>
+    <option value="istanbul">İstanbul</option>
+    <option value="ankara">Ankara</option>
+  </select>
+
+  <label for="mesafe">Mesafe (km):</label>
+  <input type="number" id="mesafe" step="0.01" placeholder="Manuel mesafe girin">
+
+  <button onclick="manuelHesapla()">Formdan Hesapla</button>
+</div>
+
 <div id="sonuc">Haritaya tıklayarak başlangıç ve varış noktalarını seçin.</div>
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
 
 <script>
 const tarifeler = {
-  izmir: { acilis: 25, km: 36 }
+  izmir: { acilis: 25, km: 36 },
+  istanbul: { acilis: 42, km: 28 },
+  ankara: { acilis: 45, km: 32 }
 };
 
-const map = L.map('map').setView([38.25, 26.8], 11); // Seferihisar merkezli
+function manuelHesapla() {
+  const il = document.getElementById("il").value;
+  const mesafe = parseFloat(document.getElementById("mesafe").value);
+  if (isNaN(mesafe)) {
+    document.getElementById("sonuc").innerText = "Lütfen geçerli bir mesafe girin.";
+    return;
+  }
+  const tarife = tarifeler[il];
+  const ucret = tarife.acilis + (mesafe * tarife.km);
+  document.getElementById("sonuc").innerText = `Manuel Mesafe: ${mesafe.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+}
+
+// Harita kısmı
+const map = L.map('map').setView([38.25, 26.8], 11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let control = null;
@@ -46,13 +84,15 @@ map.on('click', function(e) {
     }).addTo(map);
 
     control.on('routesfound', function(e) {
+      const il = document.getElementById("il").value;
       const km = e.routes[0].summary.totalDistance / 1000;
-      const ucret = tarifeler.izmir.acilis + (km * tarifeler.izmir.km);
+      const tarife = tarifeler[il];
+      const ucret = tarife.acilis + (km * tarife.km);
       document.getElementById("sonuc").innerText =
-        `Mesafe: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+        `Harita Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
     });
 
-    noktalar = []; // Yeni seçim için sıfırla
+    noktalar = [];
   }
 });
 </script>
