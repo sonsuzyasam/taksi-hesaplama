@@ -1,142 +1,447 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <title>Gerçek Zamanlı Taksimetre</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gerçek Zamanlı Taksimetre – v2</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    #map { height: 400px; margin-top: 10px; }
-    #taksimetre-ekrani {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(255,255,255,0.95);
-      padding: 12px;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-      font-size: 1rem;
-      z-index: 1000;
+    :root{
+      --card-bg: rgba(255,255,255,0.96);
+      --shadow: 0 4px 18px rgba(0,0,0,0.15);
     }
-    #taksimetre-ekrani div { margin-bottom: 6px; }
-    #kontroller { margin-top: 10px; }
+    body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin:16px; }
+    h2{ margin: 0 0 8px; }
+    #topbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    select, button, input{ padding:8px 10px; border-radius:8px; border:1px solid #ddd; background:#fff; }
+    button{ cursor:pointer; box-shadow: var(--shadow); border:none; }
+    button.primary{ background:#0ea5e9; color:#fff; }
+    button.warn{ background:#ef4444; color:#fff; }
+    button.secondary{ background:#10b981; color:#fff; }
+
+    #map{ height: 48vh; min-height:360px; margin-top:12px; border-radius:12px; overflow:hidden; box-shadow: var(--shadow); }
+
+    #hud{
+      position: relative; margin-top:12px; display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px;
+    }
+    .card{ background:var(--card-bg); border-radius:12px; padding:12px; box-shadow: var(--shadow); }
+    .row{ display:flex; justify-content:space-between; margin:6px 0; font-size:0.98rem; }
+    .big{ font-size:1.6rem; font-weight:700; }
+    .muted{ color:#666; font-size:0.9rem; }
+
+    #logs{ max-height:160px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; background:#0b1020; color:#cbd5e1; padding:10px; border-radius:10px; }
+    .pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:#eef; font-size:0.75rem; }
   </style>
 </head>
 <body>
+  <h2>Gerçek Zamanlı Taksimetre – v2</h2>
+  <div id="topbar">
+    <label>
+      İl:
+      <select id="il">
+        <option value="izmir">İzmir</option>
+        <option value="istanbul">İstanbul</option>
+        <option value="ankara">Ankara</option>
+      </select>
+    </label>
 
-<h2>Gerçek Zamanlı Taksimetre</h2>
+    <label>
+      Gece çarpanı
+      <input id="geceCarpan" type="number" min="1" step="0.05" value="1.20" style="width:90px"/>
+    </label>
 
-<select id="il">
-  <option value="izmir">İzmir</option>
-  <option value="istanbul">İstanbul</option>
-  <option value="ankara">Ankara</option>
-</select>
+    <label>
+      Bekleme için hız eşiği (km/s)
+      <input id="beklemeEsik" type="number" min="0" step="0.5" value="3" style="width:80px"/>
+    </label>
 
-<div id="kontroller">
-  <button onclick="taksimetreBaslat()">Taksimetreyi Başlat</button>
-  <button onclick="taksimetreDurdur()">Durdur</button>
-</div>
+    <label>
+      Bekleme başla süresi (sn)
+      <input id="beklemeSure" type="number" min="0" step="5" value="15" style="width:80px"/>
+    </label>
 
-<div id="taksimetre-ekrani">
-  <div><strong>Mesafe:</strong> <span id="mesafeGoster">0.00 km</span></div>
-  <div><strong>Ücret:</strong> <span id="ucretGoster">0.00 TL</span></div>
-  <div><strong>Durum:</strong> <span id="sonuc">Taksimetre hazır.</span></div>
-</div>
+    <button class="primary" id="btnStart">Başlat</button>
+    <button class="secondary" id="btnPause" disabled>Duraklat</button>
+    <button class="warn" id="btnStop" disabled>Bitir</button>
+    <button id="btnReset" disabled>Sıfırla</button>
+    <button id="btnExport" disabled>Fiş indir (CSV)</button>
+  </div>
 
-<div id="map"></div>
+  <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script>
-  const tarifeler = {
-    izmir: { acilis: 25, km: 36, bekleme: 2 },
-    istanbul: { acilis: 42, km: 28, bekleme: 3 },
-    ankara: { acilis: 45, km: 32, bekleme: 2.5 }
-  };
+  <div id="hud">
+    <div class="card">
+      <div class="row"><span>Durum</span><span id="durum" class="pill">Hazır</span></div>
+      <div class="row"><span>Süre</span><span id="sure">00:00:00</span></div>
+      <div class="row"><span>Mesafe</span><span id="mesafe" class="big">0.00 km</span></div>
+      <div class="row"><span>Hız (anlık)</span><span id="hiz">0.0 km/s</span></div>
+      <div class="row"><span>Bekleme süresi</span><span id="beklemeToplam">0:00</span></div>
+    </div>
 
-  const map = L.map('map').setView([38.42, 27.14], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    <div class="card">
+      <div class="row"><span>Açılış</span><span id="acilis">—</span></div>
+      <div class="row"><span>Km başı</span><span id="kmBasi">—</span></div>
+      <div class="row"><span>Bekleme (dk)</span><span id="beklemeDk">—</span></div>
+      <hr/>
+      <div class="row"><span>Km ücreti</span><span id="kmUcret">₺0,00</span></div>
+      <div class="row"><span>Bekleme ücreti</span><span id="beklemeUcret">₺0,00</span></div>
+      <div class="row big"><span>Toplam</span><span id="toplam">₺0,00</span></div>
+      <div class="muted" id="geceInfo"></div>
+    </div>
 
-  let watchId, taksimetreAktif = false, toplamMesafe = 0, oncekiKonum = null;
-  let ucret = 0, konumMarker, beklemeBaslangic = null;
+    <div class="card">
+      <div class="row" style="align-items:flex-start; gap:8px; flex-direction:column">
+        <strong>Log</strong>
+        <div id="logs"></div>
+      </div>
+    </div>
+  </div>
 
-  function taksimetreBaslat() {
-    if (taksimetreAktif) return;
-    taksimetreAktif = true;
-    toplamMesafe = 0;
-    ucret = 0;
-    oncekiKonum = null;
-    beklemeBaslangic = Date.now();
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // ——— Tarifeler ———
+    const tarifeler = {
+      izmir: { acilis: 25, km: 36, bekleme: 2, min: 0 },
+      istanbul: { acilis: 42, km: 28, bekleme: 3, min: 0 },
+      ankara: { acilis: 45, km: 32, bekleme: 2.5, min: 0 }
+    };
 
-    const il = document.getElementById("il").value;
-    const tarife = tarifeler[il];
-    ucret = tarife.acilis;
+    // ——— Yardımcılar ———
+    const fmtTL = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY', maximumFractionDigits:2 });
+    const pad = (n)=> String(n).padStart(2,'0');
+    const now = ()=> Date.now();
 
-    if ("geolocation" in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        (konum) => {
-          const { latitude, longitude } = konum.coords;
-          const yeniKonum = [latitude, longitude];
-
-          if (!konumMarker) {
-            konumMarker = L.marker(yeniKonum).addTo(map);
-            map.setView(yeniKonum, 15);
-          } else {
-            konumMarker.setLatLng(yeniKonum);
-            map.setView(yeniKonum, 15);
-          }
-
-          if (oncekiKonum) {
-            const mesafe = hesaplaMesafe(oncekiKonum, yeniKonum);
-            if (mesafe < 0.005) {
-              const gecenSure = (Date.now() - beklemeBaslangic) / 60000;
-              ucret += gecenSure * tarife.bekleme;
-            } else {
-              toplamMesafe += mesafe;
-              beklemeBaslangic = Date.now();
-            }
-          }
-
-          oncekiKonum = yeniKonum;
-
-          const saat = new Date().getHours();
-          const geceTarifesi = (saat >= 22 || saat < 6);
-          const kmUcret = toplamMesafe * tarife.km;
-          ucret = tarife.acilis + kmUcret;
-          if (geceTarifesi) ucret *= 1.2;
-
-          document.getElementById("mesafeGoster").innerText = `${toplamMesafe.toFixed(2)} km`;
-          document.getElementById("ucretGoster").innerText = `${ucret.toFixed(2)} TL`;
-          document.getElementById("sonuc").innerText = "Taksimetre çalışıyor...";
-        },
-        (hata) => {
-          document.getElementById("sonuc").innerText = "Konum alınamadı: " + hata.message;
-        },
-        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
-      );
-    } else {
-      document.getElementById("sonuc").innerText = "Tarayıcınız konum takibini desteklemiyor.";
+    function formatDuration(ms){
+      const s = Math.floor(ms/1000);
+      const hh = Math.floor(s/3600);
+      const mm = Math.floor((s%3600)/60);
+      const ss = s%60;
+      return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
     }
-  }
 
-  function taksimetreDurdur() {
-    taksimetreAktif = false;
-    if (watchId) navigator.geolocation.clearWatch(watchId);
-    document.getElementById("sonuc").innerText =
-      `Toplam Mesafe: ${toplamMesafe.toFixed(2)} km | Toplam Ücret: ${ucret.toFixed(2)} TL`;
-  }
+    function formatMinutes(ms){
+      const totalMin = Math.floor(ms/60000);
+      const mm = Math.floor(totalMin % 60);
+      const hh = Math.floor(totalMin / 60);
+      return `${hh}:${pad(mm)}`;
+    }
 
-  function hesaplaMesafe(konum1, konum2) {
-    const R = 6371;
-    const dLat = (konum2[0] - konum1[0]) * Math.PI / 180;
-    const dLon = (konum2[1] - konum1[1]) * Math.PI / 180;
-    const lat1 = konum1[0] * Math.PI / 180;
-    const lat2 = konum2[0] * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-</script>
+    // Haversine yerine Leaflet'in distanceTo'su
+    function kmBetween(a, b){
+      return L.latLng(a[0], a[1]).distanceTo(L.latLng(b[0], b[1])) / 1000; // km
+    }
 
+    // ——— Harita ———
+    const map = L.map('map').setView([38.42, 27.14], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap katkıcıları'
+    }).addTo(map);
+
+    let marker = null;        // konum işaretçisi
+    let path = L.polyline([], { weight:5, opacity:0.9 }).addTo(map);
+
+    // ——— Durum Değişkenleri ———
+    let watchId = null;
+    let aktif = false;
+    let duraklatildi = false;
+    let toplamMesafe = 0;          // km
+    let oncekiKonum = null;        // [lat, lng]
+    let startTime = null;          // ms
+    let pauseAccum = 0;            // ms
+    let pauseStart = null;         // ms
+
+    let beklemeBaslaT = null;      // yavaş/hareketsiz başlangıcı ms
+    let toplamBeklemeMs = 0;       // ms
+
+    // Ücret kalemleri
+    let acilisUcret = 0;
+    let kmUcretTop = 0;
+    let beklemeUcretTop = 0;
+
+    // Süzgeç / Smoothing
+    const maxSpeedKmh = 160;       // aşırı sapmaları ayıkla
+    const lastPoints = [];         // son 5 nokta için hız/hareket medyanı
+    const MAX_POINTS = 5;
+
+    // ——— UI Elemanları ———
+    const el = id => document.getElementById(id);
+    const il = el('il');
+    const geceCarpan = el('geceCarpan');
+    const beklemeEsik = el('beklemeEsik');
+    const beklemeSure = el('beklemeSure');
+
+    const lblDurum = el('durum');
+    const lblSure = el('sure');
+    const lblMesafe = el('mesafe');
+    const lblHiz = el('hiz');
+    const lblBeklemeToplam = el('beklemeToplam');
+
+    const lblAcilis = el('acilis');
+    const lblKmBasi = el('kmBasi');
+    const lblBeklemeDk = el('beklemeDk');
+    const lblKmUcret = el('kmUcret');
+    const lblBeklemeUcret = el('beklemeUcret');
+    const lblToplam = el('toplam');
+    const lblGeceInfo = el('geceInfo');
+
+    const logBox = el('logs');
+    function log(s){
+      const time = new Date().toLocaleTimeString('tr-TR');
+      logBox.textContent += `[${time}] ${s}\n`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // ——— Butonlar ———
+    el('btnStart').onclick = () => baslat();
+    el('btnPause').onclick = () => duraklat();
+    el('btnStop').onclick  = () => bitir();
+    el('btnReset').onclick = () => sifirla();
+    el('btnExport').onclick= () => exportCSV();
+
+    // ——— Başlat ———
+    function baslat(){
+      if(aktif) return;
+      aktif = true; duraklatildi = false;
+      lblDurum.textContent = 'Çalışıyor';
+
+      const t = tarifeler[il.value];
+      acilisUcret = t.acilis;
+      kmUcretTop = 0; beklemeUcretTop = 0; toplamMesafe = 0;
+      oncekiKonum = null; startTime = now(); pauseAccum = 0; pauseStart = null;
+      toplamBeklemeMs = 0; beklemeBaslaT = null;
+      lastPoints.length = 0; path.setLatLngs([]);
+
+      lblAcilis.textContent = fmtTL.format(t.acilis);
+      lblKmBasi.textContent = fmtTL.format(t.km);
+      lblBeklemeDk.textContent = fmtTL.format(t.bekleme);
+      lblGeceInfo.textContent = '';
+
+      // UI durum
+      el('btnStart').disabled = true;
+      el('btnPause').disabled = false;
+      el('btnStop').disabled = false;
+      el('btnReset').disabled = true;
+      el('btnExport').disabled = true;
+
+      if('geolocation' in navigator){
+        watchId = navigator.geolocation.watchPosition(onPos, onPosErr, {
+          enableHighAccuracy:true, maximumAge: 1000, timeout: 8000
+        });
+        log('Konum takibi başlatıldı.');
+      } else {
+        lblDurum.textContent = 'Tarayıcı konum desteklemiyor';
+        log('Geolocation desteklenmiyor.');
+      }
+      tick();
+    }
+
+    // ——— Duraklat / Devam ———
+    function duraklat(){
+      if(!aktif) return;
+      if(!duraklatildi){
+        duraklatildi = true;
+        pauseStart = now();
+        lblDurum.textContent = 'Duraklatıldı';
+        el('btnPause').textContent = 'Devam';
+        if(watchId) navigator.geolocation.clearWatch(watchId);
+        log('Takip duraklatıldı.');
+      } else {
+        duraklatildi = false;
+        pauseAccum += now() - pauseStart;
+        pauseStart = null;
+        lblDurum.textContent = 'Çalışıyor';
+        el('btnPause').textContent = 'Duraklat';
+        watchId = navigator.geolocation.watchPosition(onPos, onPosErr, {
+          enableHighAccuracy:true, maximumAge: 1000, timeout: 8000
+        });
+        log('Takip devam ediyor.');
+      }
+    }
+
+    // ——— Bitir ———
+    function bitir(){
+      if(!aktif) return;
+      aktif = false;
+      if(watchId) navigator.geolocation.clearWatch(watchId);
+      lblDurum.textContent = 'Bitti';
+      el('btnStart').disabled = false;
+      el('btnPause').disabled = true; el('btnPause').textContent = 'Duraklat';
+      el('btnStop').disabled = true;
+      el('btnReset').disabled = false;
+      el('btnExport').disabled = false;
+      log('Sürüş sonlandırıldı.');
+      // Minimum ücret uygula (varsa)
+      const min = tarifeler[il.value].min || 0;
+      const topl = Math.max(toplamTutar(), min);
+      lblToplam.textContent = fmtTL.format(topl);
+    }
+
+    // ——— Sıfırla ———
+    function sifirla(){
+      toplamMesafe = 0; oncekiKonum = null; path.setLatLngs([]);
+      kmUcretTop = 0; beklemeUcretTop = 0; acilisUcret = 0;
+      toplamBeklemeMs = 0; beklemeBaslaT = null;
+      startTime = null; pauseAccum = 0; pauseStart = null;
+      lblMesafe.textContent = '0.00 km';
+      lblHiz.textContent = '0.0 km/s';
+      lblBeklemeToplam.textContent = '0:00';
+      lblAcilis.textContent = '—';
+      lblKmBasi.textContent = '—';
+      lblBeklemeDk.textContent = '—';
+      lblKmUcret.textContent = fmtTL.format(0);
+      lblBeklemeUcret.textContent = fmtTL.format(0);
+      lblToplam.textContent = fmtTL.format(0);
+      lblDurum.textContent = 'Hazır';
+      el('btnReset').disabled = true;
+      el('btnExport').disabled = true;
+      if(marker){ marker.remove(); marker = null; }
+      log('Sayaç sıfırlandı.');
+    }
+
+    // ——— Konum Olayları ———
+    function onPos(pos){
+      if(!aktif || duraklatildi) return;
+      const { latitude:lat, longitude:lng, speed } = pos.coords; // speed m/s olabilir (tarayıcıya bağlı)
+      const p = [lat, lng];
+
+      if(!marker){
+        marker = L.marker(p).addTo(map);
+        map.setView(p, 15);
+      } else {
+        marker.setLatLng(p);
+      }
+      path.addLatLng(p);
+
+      const tNow = now();
+      if(oncekiKonum){
+        const dt = Math.max(1, (tNow - lastPoints[lastPoints.length-1]?.t || 1000))/1000; // s
+        const dKm = kmBetween(oncekiKonum, p);
+        const vKmh = (dKm / (dt/3600));
+
+        // Aykırı hızları ele
+        if(vKmh <= maxSpeedKmh){
+          toplamMesafe += dKm;
+          // Bekleme algılama: eşik altındaki hız süresi
+          const esik = parseFloat(beklemeEsik.value || '3');
+          const bekleBaslaSn = parseInt(beklemeSure.value || '15', 10);
+
+          if(vKmh < esik){
+            if(!beklemeBaslaT) beklemeBaslaT = tNow; // hareketsiz başlat
+            const beklemeMs = tNow - beklemeBaslaT;
+            if(beklemeMs >= bekleBaslaSn*1000){
+              // dakika başına tarife
+              const dk = beklemeMs / 60000;
+              beklemeUcretTop += dk * tarifeler[il.value].bekleme;
+              toplamBeklemeMs += beklemeMs;
+              beklemeBaslaT = tNow; // periyodik işleme
+            }
+          } else {
+            beklemeBaslaT = null;
+          }
+
+          // hız göstergesi için smoothing
+          lastPoints.push({ v:vKmh, t:tNow });
+          if(lastPoints.length > MAX_POINTS) lastPoints.shift();
+        }
+      }
+
+      oncekiKonum = p;
+      guncelleUI(pos);
+    }
+
+    function onPosErr(err){
+      log('Konum alınamadı: ' + err.message);
+      lblDurum.textContent = 'Konum hatası';
+    }
+
+    // ——— Zamanlayıcı ———
+    function tick(){
+      if(startTime && aktif && !duraklatildi){
+        guncelleUI();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // ——— Hesap / UI ———
+    function geceMi(){
+      const h = new Date().getHours();
+      return (h >= 22 || h < 6);
+    }
+
+    function toplamTutar(){
+      const t = tarifeler[il.value];
+      const gece = geceMi();
+      const kmPart = toplamMesafe * t.km;
+      const araToplam = acilisUcret + kmPart + beklemeUcretTop;
+      const carp = parseFloat(geceCarpan.value || '1');
+      return gece ? (araToplam * carp) : araToplam;
+    }
+
+    function guncelleUI(pos){
+      const t = now();
+      if(startTime){
+        const aktifSure = (t - startTime - pauseAccum - (pauseStart? (t - pauseStart):0));
+        lblSure.textContent = formatDuration(Math.max(0, aktifSure));
+      }
+
+      const vMed = lastPoints.length
+        ? lastPoints.map(o=>o.v).sort((a,b)=>a-b)[Math.floor(lastPoints.length/2)]
+        : 0;
+      lblHiz.textContent = (vMed||0).toFixed(1) + ' km/s';
+
+      lblMesafe.textContent = `${(toplamMesafe).toFixed(2)} km`;
+      lblBeklemeToplam.textContent = formatMinutes(toplamBeklemeMs);
+
+      const tFare = tarifeler[il.value];
+      const kmPart = toplamMesafe * tFare.km;
+      lblKmUcret.textContent = fmtTL.format(kmPart);
+      lblBeklemeUcret.textContent = fmtTL.format(beklemeUcretTop);
+
+      const total = toplamTutar();
+      lblToplam.textContent = fmtTL.format(total);
+
+      if(geceMi()){
+        lblGeceInfo.textContent = `Gece tarifesi aktif (x${geceCarpan.value}).`;
+      } else {
+        lblGeceInfo.textContent = '';
+      }
+    }
+
+    // ——— Dışa Aktarım ———
+    function exportCSV(){
+      const rows = [];
+      const tFare = tarifeler[il.value];
+      rows.push(['İl', il.value]);
+      rows.push(['Açılış', tFare.acilis]);
+      rows.push(['Km başı', tFare.km]);
+      rows.push(['Bekleme (dk)', tFare.bekleme]);
+      rows.push(['Toplam mesafe (km)', toplamMesafe.toFixed(3)]);
+      rows.push(['Toplam bekleme (dk)', (toplamBeklemeMs/60000).toFixed(1)]);
+      rows.push(['Km ücreti', (toplamMesafe * tFare.km).toFixed(2)]);
+      rows.push(['Bekleme ücreti', beklemeUcretTop.toFixed(2)]);
+      rows.push(['Açılış', acilisUcret.toFixed(2)]);
+      rows.push(['Gece çarpanı', geceMi()? geceCarpan.value : '—']);
+      rows.push(['Toplam', toplamTutar().toFixed(2)]);
+
+      const csv = rows.map(r=>r.join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ts = new Date().toISOString().replace(/[:T]/g,'-').slice(0,16);
+      a.download = `taksimetre-${ts}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // İlk yüklemede tarifeyi göster
+    (function init(){
+      const t = tarifeler[il.value];
+      lblAcilis.textContent = fmtTL.format(t.acilis);
+      lblKmBasi.textContent = fmtTL.format(t.km);
+      lblBeklemeDk.textContent = fmtTL.format(t.bekleme);
+      log('Hazır. Konum izni için HTTPS alanında çalıştırın.');
+    })();
+  </script>
 </body>
 </html>
