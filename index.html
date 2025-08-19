@@ -4,9 +4,62 @@
   <meta charset="UTF-8">
   <title>Taksi Ücreti Hesaplama</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
   <style>
-    #map { height: 400px; margin-top: 10px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    h2 {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 1.5rem;
+    }
+
+    #form-container {
+      max-width: 500px;
+      margin: 20px auto;
+      padding: 10px;
+    }
+
+    label, input, select, button {
+      display: block;
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 12px;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    #sonuc {
+      text-align: center;
+      font-size: 1.1rem;
+      margin: 15px;
+    }
+
+    #map {
+      height: 350px;
+      width: 100%;
+      margin-top: 10px;
+    }
+
     .adres-listesi {
       list-style: none;
       padding: 0;
@@ -18,59 +71,97 @@
       position: absolute;
       z-index: 1000;
     }
+
     .adres-listesi li {
-      padding: 8px;
+      padding: 12px;
+      font-size: 1rem;
+      border-bottom: 1px solid #ddd;
       cursor: pointer;
     }
+
     .adres-listesi li:hover {
       background-color: #eee;
+    }
+
+    @media (max-width: 600px) {
+      h2 {
+        font-size: 1.2rem;
+      }
+
+      #map {
+        height: 400px;
+      }
+
+      label, input, select, button {
+        font-size: 1rem;
+        padding: 10px;
+      }
     }
   </style>
 </head>
 <body>
-  <h2>Haritadan Taksi Ücreti Hesapla</h2>
+  <h2>Taksi Ücreti Hesaplama</h2>
+  <div id="form-container">
+    <label for="il">İl Seçin:</label>
+    <select id="il">
+      <option value="izmir">İzmir</option>
+      <option value="istanbul">İstanbul</option>
+      <option value="ankara">Ankara</option>
+    </select>
 
-  <label for="il">İl Seçin:</label>
-  <select id="il">
-    <option value="izmir">İzmir</option>
-    <option value="istanbul">İstanbul</option>
-    <option value="ankara">Ankara</option>
-  </select>
+    <label for="baslangic">Başlangıç Adresi:</label>
+    <input type="text" id="baslangic" oninput="adresOnerileri(this, 'baslangicListe')" autocomplete="off">
+    <ul id="baslangicListe" class="adres-listesi"></ul>
 
-  <br><br>
+    <label for="varis">Varış Adresi:</label>
+    <input type="text" id="varis" oninput="adresOnerileri(this, 'varisListe')" autocomplete="off">
+    <ul id="varisListe" class="adres-listesi"></ul>
 
-  <label for="baslangic">Başlangıç Adresi:</label>
-  <input type="text" id="baslangic" oninput="adresOnerileri(this, 'baslangicListe')" autocomplete="off">
-  <ul id="baslangicListe" class="adres-listesi"></ul>
+    <button onclick="rotaCiz()">Rota ve Ücret Hesapla</button>
+  </div>
 
-  <br><br>
-
-  <label for="varis">Varış Adresi:</label>
-  <input type="text" id="varis" oninput="adresOnerileri(this, 'varisListe')" autocomplete="off">
-  <ul id="varisListe" class="adres-listesi"></ul>
-
-  <br><br>
-  <button onclick="rotaCiz()">Rota ve Ücret Hesapla</button>
-  <p id="sonuc"></p>
-
+  <div id="sonuc">Adres girerek veya haritaya tıklayarak rota oluşturabilirsiniz.</div>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
 
   <script>
     const tarifeler = {
-      izmir: { acilis: 20, km: 14 },
-      istanbul: { acilis: 24, km: 17 },
-      ankara: { acilis: 18, km: 12 }
+      izmir: { acilis: 25, km: 36 },
+      istanbul: { acilis: 42, km: 28 },
+      ankara: { acilis: 45, km: 32 }
     };
 
     const map = L.map('map').setView([38.42, 27.14], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let control;
+    let noktalar = [];
+
+    map.on('click', function(e) {
+      noktalar.push(e.latlng);
+      L.marker(e.latlng).addTo(map);
+      if (noktalar.length === 2) {
+        if (control) map.removeControl(control);
+        control = L.Routing.control({
+          waypoints: [noktalar[0], noktalar[1]],
+          routeWhileDragging: false,
+          show: false
+        }).addTo(map);
+
+        control.on('routesfound', function(e) {
+          const il = document.getElementById("il").value;
+          const km = e.routes[0].summary.totalDistance / 1000;
+          const tarife = tarifeler[il];
+          const ucret = tarife.acilis + (km * tarife.km);
+          document.getElementById("sonuc").innerText =
+            `Harita Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+        });
+
+        noktalar = [];
+      }
+    });
 
     async function adresOnerileri(alani, listeId) {
       const query = alani.value;
@@ -103,6 +194,11 @@
       const lon1 = parseFloat(document.getElementById("baslangic").dataset.lon);
       const lat2 = parseFloat(document.getElementById("varis").dataset.lat);
       const lon2 = parseFloat(document.getElementById("varis").dataset.lon);
+
+      if (isNaN(lat1) || isNaN(lat2)) {
+        document.getElementById("sonuc").innerText = "Lütfen geçerli adresler seçin.";
+        return;
+      }
 
       if (control) map.removeControl(control);
       control = L.Routing.control({
