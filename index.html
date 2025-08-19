@@ -4,28 +4,32 @@
   <meta charset="UTF-8">
   <title>Taksi Ücreti Hesaplama</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    h2 { text-align: center; margin-top: 20px; }
-    #map { height: 400px; width: 100%; }
-    #form-container { max-width: 400px; margin: 20px auto; padding: 10px; }
-    label, input, select, button {
-      display: block;
-      width: 100%;
-      margin-bottom: 10px;
-      padding: 8px;
-      font-size: 16px;
+    #map { height: 400px; margin-top: 10px; }
+    .adres-listesi {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      border: 1px solid #ccc;
+      max-height: 150px;
+      overflow-y: auto;
+      background: white;
+      position: absolute;
+      z-index: 1000;
     }
-    #sonuc { text-align: center; font-size: 18px; margin: 15px; }
+    .adres-listesi li {
+      padding: 8px;
+      cursor: pointer;
+    }
+    .adres-listesi li:hover {
+      background-color: #eee;
+    }
   </style>
 </head>
 <body>
+  <h2>Haritadan Taksi Ücreti Hesapla</h2>
 
-<h2>Taksi Ücreti Hesaplama</h2>
-
-<div id="form-container">
   <label for="il">İl Seçin:</label>
   <select id="il">
     <option value="izmir">İzmir</option>
@@ -33,121 +37,88 @@
     <option value="ankara">Ankara</option>
   </select>
 
-  <label for="mesafe">Mesafe (km):</label>
-  <input type="number" id="mesafe" step="0.01" placeholder="Manuel mesafe girin">
+  <br><br>
+
   <label for="baslangic">Başlangıç Adresi:</label>
-<input type="text" id="baslangic" placeholder="Örn: Seferihisar, İzmir">
+  <input type="text" id="baslangic" oninput="adresOnerileri(this, 'baslangicListe')" autocomplete="off">
+  <ul id="baslangicListe" class="adres-listesi"></ul>
 
-<label for="varis">Varış Adresi:</label>
-<input type="text" id="varis" placeholder="Örn: Adnan Menderes Havalimanı">
+  <br><br>
 
-<button onclick="adresleHesapla()">Adresle Hesapla</button>
+  <label for="varis">Varış Adresi:</label>
+  <input type="text" id="varis" oninput="adresOnerileri(this, 'varisListe')" autocomplete="off">
+  <ul id="varisListe" class="adres-listesi"></ul>
 
+  <br><br>
+  <button onclick="rotaCiz()">Rota ve Ücret Hesapla</button>
+  <p id="sonuc"></p>
 
-  <button onclick="manuelHesapla()">Formdan Hesapla</button>
-</div>
+  <div id="map"></div>
 
-<div id="sonuc">Haritaya tıklayarak başlangıç ve varış noktalarını seçin.</div>
-<div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.min.js"></script>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+  <script>
+    const tarifeler = {
+      izmir: { acilis: 20, km: 14 },
+      istanbul: { acilis: 24, km: 17 },
+      ankara: { acilis: 18, km: 12 }
+    };
 
-<script>
-const tarifeler = {
-  izmir: { acilis: 25, km: 36 },
-  istanbul: { acilis: 42, km: 28 },
-  ankara: { acilis: 45, km: 32 }
-};
-
-function manuelHesapla() {
-  const il = document.getElementById("il").value;
-  const mesafe = parseFloat(document.getElementById("mesafe").value);
-  if (isNaN(mesafe)) {
-    document.getElementById("sonuc").innerText = "Lütfen geçerli bir mesafe girin.";
-    return;
-  }
-  const tarife = tarifeler[il];
-  const ucret = tarife.acilis + (mesafe * tarife.km);
-  document.getElementById("sonuc").innerText = `Manuel Mesafe: ${mesafe.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
-}
-
-// Harita kısmı
-const map = L.map('map').setView([38.25, 26.8], 11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let control = null;
-let noktalar = [];
-
-map.on('click', function(e) {
-  noktalar.push(e.latlng);
-
-  if (noktalar.length === 2) {
-    if (control) map.removeControl(control);
-
-    control = L.Routing.control({
-      waypoints: [noktalar[0], noktalar[1]],
-      routeWhileDragging: false,
-      show: false
+    const map = L.map('map').setView([38.42, 27.14], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    control.on('routesfound', function(e) {
+    let control;
+
+    async function adresOnerileri(alani, listeId) {
+      const query = alani.value;
+      if (query.length < 3) return;
+
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      const liste = document.getElementById(listeId);
+      liste.innerHTML = "";
+
+      data.features.forEach(item => {
+        const li = document.createElement("li");
+        li.textContent = item.properties.name + ", " + (item.properties.city || "");
+        li.onclick = () => {
+          alani.value = li.textContent;
+          alani.dataset.lat = item.geometry.coordinates[1];
+          alani.dataset.lon = item.geometry.coordinates[0];
+          liste.innerHTML = "";
+          L.marker([item.geometry.coordinates[1], item.geometry.coordinates[0]]).addTo(map);
+        };
+        liste.appendChild(li);
+      });
+    }
+
+    function rotaCiz() {
       const il = document.getElementById("il").value;
-      const km = e.routes[0].summary.totalDistance / 1000;
-      const tarife = tarifeler[il];
-      const ucret = tarife.acilis + (km * tarife.km);
-      document.getElementById("sonuc").innerText =
-        `Harita Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
-    });
+      const lat1 = parseFloat(document.getElementById("baslangic").dataset.lat);
+      const lon1 = parseFloat(document.getElementById("baslangic").dataset.lon);
+      const lat2 = parseFloat(document.getElementById("varis").dataset.lat);
+      const lon2 = parseFloat(document.getElementById("varis").dataset.lon);
 
-    noktalar = [];
-  }
-});
-async function adresiKoordinataCevir(adres) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(adres)}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  if (data.length > 0) {
-    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  } else {
-    throw new Error("Adres bulunamadı");
-  }
-}
+      if (control) map.removeControl(control);
+      control = L.Routing.control({
+        waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
+        routeWhileDragging: false,
+        show: false
+      }).addTo(map);
 
-async function adresleHesapla() {
-  const il = document.getElementById("il").value;
-  const baslangicAdres = document.getElementById("baslangic").value;
-  const varisAdres = document.getElementById("varis").value;
-
-  try {
-    const startCoord = await adresiKoordinataCevir(baslangicAdres);
-    const endCoord = await adresiKoordinataCevir(varisAdres);
-
-    if (control) map.removeControl(control);
-    control = L.Routing.control({
-      waypoints: [
-        L.latLng(startCoord[0], startCoord[1]),
-        L.latLng(endCoord[0], endCoord[1])
-      ],
-      routeWhileDragging: false,
-      show: false
-    }).addTo(map);
-
-    control.on('routesfound', function(e) {
-      const km = e.routes[0].summary.totalDistance / 1000;
-      const tarife = tarifeler[il];
-      const ucret = tarife.acilis + (km * tarife.km);
-      document.getElementById("sonuc").innerText =
-        `Adres Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
-    });
-
-  } catch (err) {
-    document.getElementById("sonuc").innerText = "Adresler bulunamadı.";
-  }
-}
-
-</script>
-
+      control.on('routesfound', function(e) {
+        const km = e.routes[0].summary.totalDistance / 1000;
+        const tarife = tarifeler[il];
+        const ucret = tarife.acilis + (km * tarife.km);
+        document.getElementById("sonuc").innerText =
+          `Adres Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+      });
+    }
+  </script>
 </body>
 </html>
-
