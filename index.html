@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Taksi Ücreti Hesaplama Harita</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    h2 { text-align: center; margin-top: 20px; }
+    #map { height: 500px; width: 100%; }
+    #sonuc { text-align: center; font-size: 18px; margin: 15px; }
+  </style>
+</head>
+<body>
+
+<h2>Haritadan Taksi Ücreti Hesapla</h2>
+<div id="map"></div>
+<div id="sonuc">Haritaya tıklayarak başlangıç ve varış noktalarını seçin.</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+
+<script>
+const tarifeler = {
+  izmir: { acilis: 25, km: 36 }
+};
+
+const map = L.map('map').setView([38.25, 26.8], 11); // Seferihisar merkezli
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let control = null;
+let noktalar = [];
+
+map.on('click', function(e) {
+  noktalar.push(e.latlng);
+
+  if (noktalar.length === 2) {
+    if (control) map.removeControl(control);
+
+    control = L.Routing.control({
+      waypoints: [noktalar[0], noktalar[1]],
+      routeWhileDragging: false,
+      show: false
+    }).addTo(map);
+
+    control.on('routesfound', function(e) {
+      const km = e.routes[0].summary.totalDistance / 1000;
+      const ucret = tarifeler.izmir.acilis + (km * tarifeler.izmir.km);
+      document.getElementById("sonuc").innerText =
+        `Mesafe: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+    });
+
+    noktalar = []; // Yeni seçim için sıfırla
+  }
+});
+</script>
+
+</body>
+</html>
