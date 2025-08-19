@@ -35,6 +35,14 @@
 
   <label for="mesafe">Mesafe (km):</label>
   <input type="number" id="mesafe" step="0.01" placeholder="Manuel mesafe girin">
+  <label for="baslangic">Başlangıç Adresi:</label>
+<input type="text" id="baslangic" placeholder="Örn: Seferihisar, İzmir">
+
+<label for="varis">Varış Adresi:</label>
+<input type="text" id="varis" placeholder="Örn: Adnan Menderes Havalimanı">
+
+<button onclick="adresleHesapla()">Adresle Hesapla</button>
+
 
   <button onclick="manuelHesapla()">Formdan Hesapla</button>
 </div>
@@ -95,7 +103,51 @@ map.on('click', function(e) {
     noktalar = [];
   }
 });
+async function adresiKoordinataCevir(adres) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(adres)}`;
+  const response = await fetch(url);
+  const data = await response.json();
+  if (data.length > 0) {
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  } else {
+    throw new Error("Adres bulunamadı");
+  }
+}
+
+async function adresleHesapla() {
+  const il = document.getElementById("il").value;
+  const baslangicAdres = document.getElementById("baslangic").value;
+  const varisAdres = document.getElementById("varis").value;
+
+  try {
+    const startCoord = await adresiKoordinataCevir(baslangicAdres);
+    const endCoord = await adresiKoordinataCevir(varisAdres);
+
+    if (control) map.removeControl(control);
+    control = L.Routing.control({
+      waypoints: [
+        L.latLng(startCoord[0], startCoord[1]),
+        L.latLng(endCoord[0], endCoord[1])
+      ],
+      routeWhileDragging: false,
+      show: false
+    }).addTo(map);
+
+    control.on('routesfound', function(e) {
+      const km = e.routes[0].summary.totalDistance / 1000;
+      const tarife = tarifeler[il];
+      const ucret = tarife.acilis + (km * tarife.km);
+      document.getElementById("sonuc").innerText =
+        `Adres Mesafesi: ${km.toFixed(2)} km | Tahmini Ücret: ${ucret.toFixed(2)} TL`;
+    });
+
+  } catch (err) {
+    document.getElementById("sonuc").innerText = "Adresler bulunamadı.";
+  }
+}
+
 </script>
 
 </body>
 </html>
+
